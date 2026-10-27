@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -8,7 +8,8 @@ type Logger = (msg: string) => void;
 type AgentTarget = 'claude' | 'codex' | 'copilot' | 'all';
 
 const COPILOT_MARKER = '<!-- kumiq-instructions -->';
-const CODEX_HOOK_NAME = 'kumiq-task-hint';
+const PACKAGE_VERSION = '0.1.2';
+const STATE_FILE = '.kumiq-hooks-state.json';
 
 const COPILOT_BLOCK = `${COPILOT_MARKER}
 ## KumiQ Standards
@@ -59,6 +60,28 @@ const KUMIQ_MCP_SERVER = {
   type: 'http',
 } as const;
 
+async function readState(root: string): Promise<Record<string, unknown>> {
+  return readJSON(join(root, STATE_FILE));
+}
+
+async function updateState(root: string, key: string, value: boolean): Promise<void> {
+  const state = await readState(root);
+  if (value) state[key] = true;
+  else delete state[key];
+  if (Object.keys(state).length) await atomicWrite(join(root, STATE_FILE), JSON.stringify(state, null, 2) + '\n');
+  else if (existsSync(join(root, STATE_FILE))) await unlink(join(root, STATE_FILE));
+}
+
+function hookCommand(agent: 'claude' | 'codex'): string {
+  return `npx --yes --package=@kumiq-app/hooks@${PACKAGE_VERSION} kumiq run --agent ${agent}`;
+}
+
+function isManagedHookCommand(command: string | undefined, agent: 'claude' | 'codex'): boolean {
+  if (!command) return false;
+  return command.includes('@kumiq-app/hooks@') ||
+    (command.includes('node ') && command.includes('dist/cli.js') && command.includes(`run --agent ${agent}`));
+}
+
 // ── Claude Code ───────────────────────────────────────────────────────────────
 
 async function installClaudeMcp(root: string, log: Logger): Promise<void> {
@@ -67,6 +90,7 @@ async function installClaudeMcp(root: string, log: Logger): Promise<void> {
   const servers = (file['mcpServers'] as Record<string, unknown> | undefined) ?? {};
   if (servers['KumiQ']) { log('Claude Code MCP: already configured.'); return; }
   await atomicWrite(path, JSON.stringify({ ...file, mcpServers: { ...servers, KumiQ: KUMIQ_MCP_SERVER } }, null, 2) + '\n');
+  await updateState(root, 'claudeMcpCreated', true);
   log('Claude Code MCP: KumiQ server added to .claude/mcp.json');
 }
 
@@ -75,19 +99,21 @@ async function uninstallClaudeMcp(root: string, log: Logger): Promise<void> {
   if (!existsSync(path)) return;
   const file = await readJSON(path);
   const servers: Record<string, unknown> = { ...(file['mcpServers'] as Record<string, unknown> | undefined) };
-  if (!servers['KumiQ']) return;
+  const state = await readState(root);
+  if (!state['claudeMcpCreated'] || JSON.stringify(servers['KumiQ']) !== JSON.stringify(KUMIQ_MCP_SERVER)) return;
   delete servers['KumiQ'];
   await atomicWrite(path, JSON.stringify({ ...file, mcpServers: servers }, null, 2) + '\n');
   log('Claude Code MCP: KumiQ server removed.');
+  await updateState(root, 'claudeMcpCreated', false);
 }
 
-async function installClaude(root: string, cliPath: string, log: Logger): Promise<void> {
+async function installClaude(root: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
   const settings = await readJSON(path);
   const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
   const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
-  const hookCmd = `node ${cliPath} run --agent claude`;
-  const already = entries.some(m => (m.hooks ?? []).some(h => h.command?.includes('run --agent claude')));
+  const hookCmd = hookCommand('claude');
+  const already = entries.some(m => (m.hooks ?? []).some(h => isManagedHookCommand(h.command, 'claude')));
   if (already) { log('Claude Code: already installed.'); }
   else {
     const updated = {
@@ -107,7 +133,7 @@ async function uninstallClaude(root: string, log: Logger): Promise<void> {
     const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
     const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
     const filtered = entries
-      .map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !h.command?.includes('run --agent claude')) }))
+      .map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !isManagedHookCommand(h.command, 'claude')) }))
       .filter(m => (m.hooks ?? []).length > 0);
     const updatedHooks: Record<string, unknown> = { ...existing };
     if (filtered.length) updatedHooks['UserPromptSubmit'] = filtered;
@@ -122,35 +148,31 @@ async function uninstallClaude(root: string, log: Logger): Promise<void> {
 
 // ── Codex ─────────────────────────────────────────────────────────────────────
 
-async function installCodex(root: string, cliPath: string, log: Logger): Promise<void> {
+async function installCodex(root: string, log: Logger): Promise<void> {
   const path = join(root, '.codex', 'hooks.json');
   const file = await readJSON(path);
-  const hooks = ((file['hooks'] as unknown[]) ?? []) as Array<{ name?: string; command?: string }>;
-  if (hooks.some(h => h.name === CODEX_HOOK_NAME)) { log('Codex: already installed.'); return; }
+  const hooks = (file['hooks'] as Record<string, unknown> | undefined) ?? {};
+  const entries = (hooks['UserPromptSubmit'] as Array<{ hooks?: Array<{ command?: string; type?: string }> }> | undefined) ?? [];
+  if (entries.some(m => (m.hooks ?? []).some(h => isManagedHookCommand(h.command, 'codex')))) { log('Codex: already installed.'); return; }
 
-  const hookCmd = `node ${cliPath} run --agent codex`;
-  const updated = {
-    ...file,
-    version: file['version'] ?? '1',
-    hooks: [...hooks, { name: CODEX_HOOK_NAME, event: 'startup', command: hookCmd }],
-  };
+  const hookCmd = hookCommand('codex');
+  const updated = { ...file, hooks: { ...hooks, UserPromptSubmit: [...entries, { hooks: [{ type: 'command', command: hookCmd }] }] } };
   await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
   log('Codex: hook added to .codex/hooks.json');
-  log('Codex: open .codex/hooks.json in Codex and follow the trust prompt to activate it.');
-  log('Codex MCP: add this to ~/.codex/config.yaml to enable KumiQ:');
-  log('  mcpServers:');
-  log('    KumiQ:');
-  log(`      url: ${KUMIQ_MCP_SERVER.url}`);
-  log(`      type: ${KUMIQ_MCP_SERVER.type}`);
+  log('Codex: review and trust the project hook in Codex before it runs.');
 }
 
 async function uninstallCodex(root: string, log: Logger): Promise<void> {
   const path = join(root, '.codex', 'hooks.json');
   if (!existsSync(path)) { log('Codex: not installed.'); return; }
   const file = await readJSON(path);
-  const hooks = ((file['hooks'] as unknown[]) ?? []) as Array<{ name?: string; command?: string }>;
-  const filtered = hooks.filter(h => h.name !== CODEX_HOOK_NAME && !h.command?.includes('run --agent codex'));
-  await atomicWrite(path, JSON.stringify({ ...file, hooks: filtered }, null, 2) + '\n');
+  const hooks = (file['hooks'] as Record<string, unknown> | undefined) ?? {};
+  const entries = (hooks['UserPromptSubmit'] as Array<{ hooks?: Array<{ command?: string; name?: string }> }> | undefined) ?? [];
+  const filtered = entries.map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !isManagedHookCommand(h.command, 'codex')) })).filter(m => (m.hooks ?? []).length);
+  const updatedHooks: Record<string, unknown> = { ...hooks };
+  if (filtered.length) updatedHooks['UserPromptSubmit'] = filtered;
+  else delete updatedHooks['UserPromptSubmit'];
+  await atomicWrite(path, JSON.stringify({ ...file, hooks: updatedHooks }, null, 2) + '\n');
   log('Codex: hook removed.');
 }
 
@@ -164,6 +186,7 @@ async function installCopilotMcp(root: string, log: Logger): Promise<void> {
   if (servers['KumiQ']) { log('Copilot MCP: already configured.'); return; }
   const updated = { ...file, mcp: { ...mcp, servers: { ...servers, KumiQ: KUMIQ_MCP_SERVER } } };
   await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
+  await updateState(root, 'copilotMcpCreated', true);
   log('Copilot MCP: KumiQ server added to .vscode/settings.json');
 }
 
@@ -173,10 +196,12 @@ async function uninstallCopilotMcp(root: string, log: Logger): Promise<void> {
   const file = await readJSON(path);
   const mcp = (file['mcp'] as Record<string, unknown> | undefined) ?? {};
   const servers: Record<string, unknown> = { ...(mcp['servers'] as Record<string, unknown> | undefined) };
-  if (!servers['KumiQ']) return;
+  const state = await readState(root);
+  if (!state['copilotMcpCreated'] || JSON.stringify(servers['KumiQ']) !== JSON.stringify(KUMIQ_MCP_SERVER)) return;
   delete servers['KumiQ'];
   await atomicWrite(path, JSON.stringify({ ...file, mcp: { ...mcp, servers } }, null, 2) + '\n');
   log('Copilot MCP: KumiQ server removed.');
+  await updateState(root, 'copilotMcpCreated', false);
 }
 
 async function installCopilot(root: string, log: Logger): Promise<void> {
@@ -210,15 +235,15 @@ async function uninstallCopilot(root: string, log: Logger): Promise<void> {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function install(agentTarget: string, log: Logger, cliPath: string): Promise<void> {
+export async function install(agentTarget: string, log: Logger): Promise<void> {
   const root = gitRoot(process.cwd());
   const agents: AgentTarget[] = (agentTarget === 'all' || !agentTarget)
     ? ['claude', 'codex', 'copilot']
     : [agentTarget as AgentTarget];
 
   for (const agent of agents) {
-    if (agent === 'claude')  await installClaude(root, cliPath, log);
-    if (agent === 'codex')   await installCodex(root, cliPath, log);
+    if (agent === 'claude')  await installClaude(root, log);
+    if (agent === 'codex')   await installCodex(root, log);
     if (agent === 'copilot') await installCopilot(root, log);
   }
 }

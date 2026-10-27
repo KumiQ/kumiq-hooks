@@ -32,7 +32,7 @@ function buildContext(text: string): string {
 export async function runHook(agent: HookAgent): Promise<void> {
   const raw = await readStdin();
   const text = extractText(raw, agent);
-  const hookEventName = agent === 'claude' ? 'UserPromptSubmit' : 'startup';
+  const hookEventName = 'UserPromptSubmit';
   const additionalContext = buildContext(text);
   process.stdout.write(
     JSON.stringify({ continue: true, hookSpecificOutput: { hookEventName, additionalContext } }) + '\n',

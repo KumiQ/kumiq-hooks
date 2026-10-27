@@ -74,13 +74,13 @@ describe('runHook', () => {
     expect(hookOut['additionalContext'] as string).toContain('get_standards');
   });
 
-  it('codex: uses startup event and reads task_description', async () => {
+  it('codex: uses UserPromptSubmit event and reads task_description', async () => {
     let output = '';
     await withStdin(JSON.stringify({ task_description: 'fix the broken signup flow' }), async () => {
       output = await captureStdout(() => runHook('codex'));
     });
     const hookOut = (JSON.parse(output.trim()) as Record<string, unknown>)['hookSpecificOutput'] as Record<string, unknown>;
-    expect(hookOut['hookEventName']).toBe('startup');
+    expect(hookOut['hookEventName']).toBe('UserPromptSubmit');
     expect(hookOut['additionalContext'] as string).toContain('bug-fix');
   });
 

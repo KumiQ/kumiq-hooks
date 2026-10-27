@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     case 'install': {
       const agent = parseAgent(rest);
       validateInstallAgent(agent);
-      await install(agent, console.log, process.argv[1]!);
+      await install(agent, console.log);
       break;
     }
     case undefined: {
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
       } else {
         const agent = parseAgent(rest);
         validateInstallAgent(agent);
-        await install(agent, console.log, process.argv[1]!);
+        await install(agent, console.log);
       }
       break;
     }

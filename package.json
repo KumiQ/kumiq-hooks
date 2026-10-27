@@ -1,6 +1,6 @@
 {
   "name": "@kumiq-app/hooks",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "KumiQ agent hooks — guide Claude Code, Codex, and GitHub Copilot to call get_standards before every task.",
   "type": "module",
   "bin": {
