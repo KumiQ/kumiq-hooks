@@ -151,27 +151,56 @@ async function uninstallCodex(root: string, log: Logger): Promise<void> {
 
 // ── GitHub Copilot ────────────────────────────────────────────────────────────
 
+async function installCopilotMcp(root: string, log: Logger): Promise<void> {
+  const path = join(root, '.vscode', 'settings.json');
+  const file = await readJSON(path);
+  const mcp = (file['mcp'] as Record<string, unknown> | undefined) ?? {};
+  const servers = (mcp['servers'] as Record<string, unknown> | undefined) ?? {};
+  if (servers['KumiQ']) { log('Copilot MCP: already configured.'); return; }
+  const updated = { ...file, mcp: { ...mcp, servers: { ...servers, KumiQ: KUMIQ_MCP_SERVER } } };
+  await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
+  log('Copilot MCP: KumiQ server added to .vscode/settings.json');
+}
+
+async function uninstallCopilotMcp(root: string, log: Logger): Promise<void> {
+  const path = join(root, '.vscode', 'settings.json');
+  if (!existsSync(path)) return;
+  const file = await readJSON(path);
+  const mcp = (file['mcp'] as Record<string, unknown> | undefined) ?? {};
+  const servers: Record<string, unknown> = { ...(mcp['servers'] as Record<string, unknown> | undefined) };
+  if (!servers['KumiQ']) return;
+  delete servers['KumiQ'];
+  await atomicWrite(path, JSON.stringify({ ...file, mcp: { ...mcp, servers } }, null, 2) + '\n');
+  log('Copilot MCP: KumiQ server removed.');
+}
+
 async function installCopilot(root: string, log: Logger): Promise<void> {
   const path = join(root, '.github', 'copilot-instructions.md');
   const existing = existsSync(path) ? await readFile(path, 'utf8') : '';
-  if (existing.includes(COPILOT_MARKER)) { log('Copilot: already installed.'); return; }
-
-  const content = existing.trimEnd()
-    ? existing.trimEnd() + '\n\n' + COPILOT_BLOCK + '\n'
-    : COPILOT_BLOCK + '\n';
-  await atomicWrite(path, content);
-  log('Copilot: instructions added to .github/copilot-instructions.md');
+  if (existing.includes(COPILOT_MARKER)) { log('Copilot: already installed.'); }
+  else {
+    const content = existing.trimEnd()
+      ? existing.trimEnd() + '\n\n' + COPILOT_BLOCK + '\n'
+      : COPILOT_BLOCK + '\n';
+    await atomicWrite(path, content);
+    log('Copilot: instructions added to .github/copilot-instructions.md');
+  }
+  await installCopilotMcp(root, log);
 }
 
 async function uninstallCopilot(root: string, log: Logger): Promise<void> {
   const path = join(root, '.github', 'copilot-instructions.md');
-  if (!existsSync(path)) { log('Copilot: not installed.'); return; }
-  const existing = await readFile(path, 'utf8');
-  const cleaned = existing
-    .replace(/\n*<!-- kumiq-instructions -->[\s\S]*?<!-- \/kumiq-instructions -->\n*/g, '\n')
-    .trimEnd();
-  await atomicWrite(path, cleaned ? cleaned + '\n' : '');
-  log('Copilot: instructions removed.');
+  if (existsSync(path)) {
+    const existing = await readFile(path, 'utf8');
+    const cleaned = existing
+      .replace(/\n*<!-- kumiq-instructions -->[\s\S]*?<!-- \/kumiq-instructions -->\n*/g, '\n')
+      .trimEnd();
+    await atomicWrite(path, cleaned ? cleaned + '\n' : '');
+    log('Copilot: instructions removed.');
+  } else {
+    log('Copilot: not installed.');
+  }
+  await uninstallCopilotMcp(root, log);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
