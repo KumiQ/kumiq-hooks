@@ -1,4 +1,4 @@
-# kumiq
+# KumiQ
 
 KumiQ agent hooks - guide Claude Code, Codex, and GitHub Copilot to call `get_standards` before every task, so the right standards are loaded before the model begins work.
 
