@@ -7,15 +7,15 @@ KumiQ agent hooks - guide Claude Code, Codex, and GitHub Copilot to call `get_st
 Run once from the root of any repository:
 
 ```bash
-npx kumiq install
+npx @kumiq-app/hooks install
 ```
 
 This installs hooks for all three agents. To target a specific one:
 
 ```bash
-npx kumiq install --agent claude
-npx kumiq install --agent codex
-npx kumiq install --agent copilot
+npx @kumiq-app/hooks install --agent claude
+npx @kumiq-app/hooks install --agent codex
+npx @kumiq-app/hooks install --agent copilot
 ```
 
 Commit the generated config files so every teammate gets the hooks automatically.
@@ -23,7 +23,7 @@ Commit the generated config files so every teammate gets the hooks automatically
 To remove:
 
 ```bash
-npx kumiq uninstall
+npx @kumiq-app/hooks uninstall
 ```
 
 The setup is idempotent - running it again on an already-configured repo prints "already installed" and exits cleanly.
@@ -61,4 +61,4 @@ Multiple types are inferred when a request spans categories.
 
 ## License
 
-MIT
+MIT - see [LICENSE](LICENSE)
