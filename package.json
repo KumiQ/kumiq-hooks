@@ -1,0 +1,32 @@
+{
+  "name": "kumiq",
+  "version": "0.1.0",
+  "description": "KumiQ agent hooks — guide Claude Code, Codex, and GitHub Copilot to call get_standards before every task.",
+  "type": "module",
+  "bin": {
+    "kumiq": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KumiQ/kumiq-hooks.git"
+  },
+  "packageManager": "pnpm@10.20.0"
+}
