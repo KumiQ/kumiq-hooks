@@ -137,7 +137,7 @@ async function installCodex(root: string, cliPath: string, log: Logger): Promise
   await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
   log('Codex: hook added to .codex/hooks.json');
   log('Codex: open .codex/hooks.json in Codex and follow the trust prompt to activate it.');
-  log('Codex MCP: add this to ~/.codex/config.yaml to enable get_standards:');
+  log('Codex MCP: add this to ~/.codex/config.yaml to enable KumiQ:');
   log('  mcpServers:');
   log('    KumiQ:');
   log(`      url: ${KUMIQ_MCP_SERVER.url}`);
