@@ -54,7 +54,32 @@ async function readJSON(filePath: string): Promise<Record<string, unknown>> {
   }
 }
 
+const KUMIQ_MCP_SERVER = {
+  url: 'https://mcp-dzv7.onrender.com/mcp',
+  type: 'http',
+} as const;
+
 // ── Claude Code ───────────────────────────────────────────────────────────────
+
+async function installClaudeMcp(root: string, log: Logger): Promise<void> {
+  const path = join(root, '.claude', 'mcp.json');
+  const file = await readJSON(path);
+  const servers = (file['mcpServers'] as Record<string, unknown> | undefined) ?? {};
+  if (servers['KumiQ']) { log('Claude Code MCP: already configured.'); return; }
+  await atomicWrite(path, JSON.stringify({ ...file, mcpServers: { ...servers, KumiQ: KUMIQ_MCP_SERVER } }, null, 2) + '\n');
+  log('Claude Code MCP: KumiQ server added to .claude/mcp.json');
+}
+
+async function uninstallClaudeMcp(root: string, log: Logger): Promise<void> {
+  const path = join(root, '.claude', 'mcp.json');
+  if (!existsSync(path)) return;
+  const file = await readJSON(path);
+  const servers: Record<string, unknown> = { ...(file['mcpServers'] as Record<string, unknown> | undefined) };
+  if (!servers['KumiQ']) return;
+  delete servers['KumiQ'];
+  await atomicWrite(path, JSON.stringify({ ...file, mcpServers: servers }, null, 2) + '\n');
+  log('Claude Code MCP: KumiQ server removed.');
+}
 
 async function installClaude(root: string, cliPath: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
@@ -63,30 +88,36 @@ async function installClaude(root: string, cliPath: string, log: Logger): Promis
   const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
   const hookCmd = `node ${cliPath} run --agent claude`;
   const already = entries.some(m => (m.hooks ?? []).some(h => h.command?.includes('run --agent claude')));
-  if (already) { log('Claude Code: already installed.'); return; }
-
-  const updated = {
-    ...settings,
-    hooks: { ...existing, UserPromptSubmit: [...entries, { hooks: [{ type: 'command', command: hookCmd }] }] },
-  };
-  await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
-  log(`Claude Code: hook added to .claude/settings.json`);
+  if (already) { log('Claude Code: already installed.'); }
+  else {
+    const updated = {
+      ...settings,
+      hooks: { ...existing, UserPromptSubmit: [...entries, { hooks: [{ type: 'command', command: hookCmd }] }] },
+    };
+    await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
+    log('Claude Code: hook added to .claude/settings.json');
+  }
+  await installClaudeMcp(root, log);
 }
 
 async function uninstallClaude(root: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
-  if (!existsSync(path)) { log('Claude Code: not installed.'); return; }
-  const settings = await readJSON(path);
-  const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
-  const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
-  const filtered = entries
-    .map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !h.command?.includes('run --agent claude')) }))
-    .filter(m => (m.hooks ?? []).length > 0);
-  const updatedHooks: Record<string, unknown> = { ...existing };
-  if (filtered.length) updatedHooks['UserPromptSubmit'] = filtered;
-  else delete updatedHooks['UserPromptSubmit'];
-  await atomicWrite(path, JSON.stringify({ ...settings, hooks: updatedHooks }, null, 2) + '\n');
-  log('Claude Code: hook removed.');
+  if (existsSync(path)) {
+    const settings = await readJSON(path);
+    const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
+    const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
+    const filtered = entries
+      .map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !h.command?.includes('run --agent claude')) }))
+      .filter(m => (m.hooks ?? []).length > 0);
+    const updatedHooks: Record<string, unknown> = { ...existing };
+    if (filtered.length) updatedHooks['UserPromptSubmit'] = filtered;
+    else delete updatedHooks['UserPromptSubmit'];
+    await atomicWrite(path, JSON.stringify({ ...settings, hooks: updatedHooks }, null, 2) + '\n');
+    log('Claude Code: hook removed.');
+  } else {
+    log('Claude Code: not installed.');
+  }
+  await uninstallClaudeMcp(root, log);
 }
 
 // ── Codex ─────────────────────────────────────────────────────────────────────

@@ -32,9 +32,11 @@ The setup is idempotent - running it again on an already-configured repo prints 
 
 | Agent | Mechanism | Trigger |
 |---|---|---|
-| Claude Code | `UserPromptSubmit` hook in `.claude/settings.json` | Before every prompt |
+| Claude Code | `UserPromptSubmit` hook in `.claude/settings.json` + MCP server in `.claude/mcp.json` | Before every prompt |
 | Codex | `startup` hook in `.codex/hooks.json` | At task start |
 | GitHub Copilot | Block appended to `.github/copilot-instructions.md` | Every chat request |
+
+For Claude Code, the install also writes `.claude/mcp.json` with the KumiQ MCP server so the `get_standards` tool is available without any manual configuration.
 
 Each hook infers KumiQ task types from the prompt text and injects an instruction to call `get_standards` with those types before starting work.
 
@@ -57,7 +59,9 @@ Multiple types are inferred when a request spans categories.
 ## Requirements
 
 - Node.js 18+
-- A KumiQ MCP server configured in your agent
+- Claude Code, Codex, or GitHub Copilot
+
+No manual MCP configuration needed - the install command sets it up automatically for Claude Code.
 
 ## License
 
