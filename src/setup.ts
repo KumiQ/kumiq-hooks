@@ -88,7 +88,8 @@ function isManagedHookCommand(command: string | undefined, agent: 'claude' | 'co
 
 function isManagedWorkflowGateCommand(command: string | undefined): boolean {
   if (!command) return false;
-  return command.includes('kumiq workflow-gate');
+  return command.includes('kumiq workflow-gate') ||
+    (command.includes('node ') && command.includes('dist/cli.js') && command.includes('workflow-gate'));
 }
 
 const WORKFLOW_GATE_MATCHER = 'get_standards|list_workflow_skills|get_workflow_skill';
@@ -118,7 +119,7 @@ async function uninstallClaudeMcp(root: string, log: Logger): Promise<void> {
   await updateState(root, 'claudeMcpCreated', false);
 }
 
-async function installClaude(root: string, log: Logger): Promise<void> {
+export async function installClaude(root: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
   const settings = await readJSON(path);
   const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
@@ -146,7 +147,7 @@ async function installClaude(root: string, log: Logger): Promise<void> {
   await installClaudeMcp(root, log);
 }
 
-async function uninstallClaude(root: string, log: Logger): Promise<void> {
+export async function uninstallClaude(root: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
   if (existsSync(path)) {
     const settings = await readJSON(path);

@@ -1,5 +1,9 @@
 import { gate, runWorkflowGate } from './workflow-gate.js';
 import { inferTaskTypes } from './infer-task-type.js';
+import { installClaude, uninstallClaude } from './setup.js';
+import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 describe('inferTaskTypes', () => {
   it('returns empty array for unrelated text', () => {
@@ -169,6 +173,59 @@ describe('gate', () => {
   it('returns null for non-KumiQ tools', () => {
     expect(gate({ tool_name: 'Bash' })).toBeNull();
     expect(gate({})).toBeNull();
+  });
+});
+
+describe('installClaude / uninstallClaude', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'kumiq-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('fresh install writes both UserPromptSubmit and PostToolUse hooks', async () => {
+    await installClaude(root, () => {});
+    const raw = await readFile(join(root, '.claude', 'settings.json'), 'utf8');
+    const settings = JSON.parse(raw) as { hooks: Record<string, unknown> };
+    const prompt = settings.hooks['UserPromptSubmit'] as Array<{ hooks: Array<{ command: string }> }>;
+    const gate = settings.hooks['PostToolUse'] as Array<{ matcher: string; hooks: Array<{ command: string }> }>;
+    expect(prompt).toHaveLength(1);
+    expect(prompt[0].hooks[0].command).toContain('kumiq run --agent claude');
+    expect(gate).toHaveLength(1);
+    expect(gate[0].hooks[0].command).toContain('kumiq workflow-gate');
+    expect(gate[0].matcher).toBe('get_standards|list_workflow_skills|get_workflow_skill');
+  });
+
+  it('re-running install is idempotent and logs already installed', async () => {
+    const logs: string[] = [];
+    await installClaude(root, msg => logs.push(msg));
+    await installClaude(root, msg => logs.push(msg));
+    expect(logs.some(m => m.includes('already installed'))).toBe(true);
+    const raw = await readFile(join(root, '.claude', 'settings.json'), 'utf8');
+    const settings = JSON.parse(raw) as { hooks: Record<string, unknown[]> };
+    expect(settings.hooks['UserPromptSubmit']).toHaveLength(1);
+    expect(settings.hooks['PostToolUse']).toHaveLength(1);
+  });
+
+  it('uninstall removes KumiQ hooks and preserves foreign PostToolUse entries', async () => {
+    const settingsPath = join(root, '.claude', 'settings.json');
+    await mkdir(join(root, '.claude'), { recursive: true });
+    const foreign = { matcher: 'SomeOtherTool', hooks: [{ type: 'command', command: 'foreign-hook' }] };
+    await writeFile(settingsPath, JSON.stringify({ hooks: { PostToolUse: [foreign] } }, null, 2) + '\n', 'utf8');
+
+    await installClaude(root, () => {});
+    await uninstallClaude(root, () => {});
+
+    const raw = await readFile(settingsPath, 'utf8');
+    const settings = JSON.parse(raw) as { hooks: Record<string, unknown> };
+    const remaining = settings.hooks['PostToolUse'] as Array<{ hooks: Array<{ command: string }> }>;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].hooks[0].command).toBe('foreign-hook');
+    expect(settings.hooks['UserPromptSubmit']).toBeUndefined();
   });
 });
 
