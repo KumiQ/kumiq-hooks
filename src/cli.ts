@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runHook, HookAgent } from './runner.js';
 import { install, uninstall } from './setup.js';
+import { runWorkflowGate } from './workflow-gate.js';
 
 const args = process.argv.slice(2);
 const [command, ...rest] = args;
@@ -48,6 +49,10 @@ async function main(): Promise<void> {
       await install(agent, console.log);
       break;
     }
+    case 'workflow-gate': {
+      await runWorkflowGate();
+      break;
+    }
     case undefined: {
       // bare invocation: install all (legacy: support --uninstall flag for back-compat)
       if (parseUninstallFlag(rest)) {
@@ -62,7 +67,7 @@ async function main(): Promise<void> {
       break;
     }
     default:
-      console.error(`Unknown command "${command}". Commands: install, uninstall, run`);
+      console.error(`Unknown command "${command}". Commands: install, uninstall, run, workflow-gate`);
       process.exit(1);
   }
 }

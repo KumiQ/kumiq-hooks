@@ -76,11 +76,23 @@ function hookCommand(agent: 'claude' | 'codex'): string {
   return `npx --yes --package=@kumiq-app/hooks@${PACKAGE_VERSION} kumiq run --agent ${agent}`;
 }
 
+function workflowGateCommand(): string {
+  return `npx --yes --package=@kumiq-app/hooks@${PACKAGE_VERSION} kumiq workflow-gate`;
+}
+
 function isManagedHookCommand(command: string | undefined, agent: 'claude' | 'codex'): boolean {
   if (!command) return false;
-  return command.includes('@kumiq-app/hooks@') ||
+  return (command.includes('@kumiq-app/hooks@') && !command.includes('workflow-gate')) ||
     (command.includes('node ') && command.includes('dist/cli.js') && command.includes(`run --agent ${agent}`));
 }
+
+function isManagedWorkflowGateCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  return command.includes('kumiq workflow-gate') ||
+    (command.includes('node ') && command.includes('dist/cli.js') && command.includes('workflow-gate'));
+}
+
+const WORKFLOW_GATE_MATCHER = 'get_standards|list_workflow_skills|get_workflow_skill';
 
 // ── Claude Code ───────────────────────────────────────────────────────────────
 
@@ -107,39 +119,59 @@ async function uninstallClaudeMcp(root: string, log: Logger): Promise<void> {
   await updateState(root, 'claudeMcpCreated', false);
 }
 
-async function installClaude(root: string, log: Logger): Promise<void> {
+export async function installClaude(root: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
   const settings = await readJSON(path);
   const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
-  const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
-  const hookCmd = hookCommand('claude');
-  const already = entries.some(m => (m.hooks ?? []).some(h => isManagedHookCommand(h.command, 'claude')));
-  if (already) { log('Claude Code: already installed.'); }
+
+  const promptEntries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
+  const promptAlready = promptEntries.some(m => (m.hooks ?? []).some(h => isManagedHookCommand(h.command, 'claude')));
+
+  const gateEntries = ((existing['PostToolUse'] as unknown[]) ?? []) as Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>;
+  const gateAlready = gateEntries.some(m => (m.hooks ?? []).some(h => isManagedWorkflowGateCommand(h.command)));
+
+  if (promptAlready && gateAlready) { log('Claude Code: already installed.'); }
   else {
-    const updated = {
+    const updatedPrompt = promptAlready
+      ? promptEntries
+      : [...promptEntries, { hooks: [{ type: 'command', command: hookCommand('claude') }] }];
+    const updatedGate = gateAlready
+      ? gateEntries
+      : [...gateEntries, { matcher: WORKFLOW_GATE_MATCHER, hooks: [{ type: 'command', command: workflowGateCommand() }] }];
+    await atomicWrite(path, JSON.stringify({
       ...settings,
-      hooks: { ...existing, UserPromptSubmit: [...entries, { hooks: [{ type: 'command', command: hookCmd }] }] },
-    };
-    await atomicWrite(path, JSON.stringify(updated, null, 2) + '\n');
-    log('Claude Code: hook added to .claude/settings.json');
+      hooks: { ...existing, UserPromptSubmit: updatedPrompt, PostToolUse: updatedGate },
+    }, null, 2) + '\n');
+    if (!promptAlready) log('Claude Code: UserPromptSubmit hook added to .claude/settings.json');
+    if (!gateAlready) log('Claude Code: PostToolUse workflow-gate hook added to .claude/settings.json');
   }
   await installClaudeMcp(root, log);
 }
 
-async function uninstallClaude(root: string, log: Logger): Promise<void> {
+export async function uninstallClaude(root: string, log: Logger): Promise<void> {
   const path = join(root, '.claude', 'settings.json');
   if (existsSync(path)) {
     const settings = await readJSON(path);
     const existing = (settings['hooks'] as Record<string, unknown> | undefined) ?? {};
-    const entries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
-    const filtered = entries
+
+    const promptEntries = ((existing['UserPromptSubmit'] as unknown[]) ?? []) as Array<{ hooks?: Array<{ command?: string }> }>;
+    const filteredPrompt = promptEntries
       .map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !isManagedHookCommand(h.command, 'claude')) }))
       .filter(m => (m.hooks ?? []).length > 0);
+
+    const gateEntries = ((existing['PostToolUse'] as unknown[]) ?? []) as Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>;
+    const filteredGate = gateEntries
+      .map(m => ({ ...m, hooks: (m.hooks ?? []).filter(h => !isManagedWorkflowGateCommand(h.command)) }))
+      .filter(m => (m.hooks ?? []).length > 0);
+
     const updatedHooks: Record<string, unknown> = { ...existing };
-    if (filtered.length) updatedHooks['UserPromptSubmit'] = filtered;
+    if (filteredPrompt.length) updatedHooks['UserPromptSubmit'] = filteredPrompt;
     else delete updatedHooks['UserPromptSubmit'];
+    if (filteredGate.length) updatedHooks['PostToolUse'] = filteredGate;
+    else delete updatedHooks['PostToolUse'];
+
     await atomicWrite(path, JSON.stringify({ ...settings, hooks: updatedHooks }, null, 2) + '\n');
-    log('Claude Code: hook removed.');
+    log('Claude Code: hooks removed.');
   } else {
     log('Claude Code: not installed.');
   }
