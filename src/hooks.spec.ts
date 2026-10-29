@@ -211,6 +211,25 @@ describe('installClaude / uninstallClaude', () => {
     expect(settings.hooks['PostToolUse']).toHaveLength(1);
   });
 
+  it('partial upgrade: only missing hook is added and logged individually', async () => {
+    const settingsPath = join(root, '.claude', 'settings.json');
+    await mkdir(join(root, '.claude'), { recursive: true });
+    // Pre-install only the UserPromptSubmit hook (simulates old version)
+    const existing = { hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: `npx --yes --package=@kumiq-app/hooks@0.1.3 kumiq run --agent claude` }] }] } };
+    await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+
+    const logs: string[] = [];
+    await installClaude(root, msg => logs.push(msg));
+
+    expect(logs.some(m => m.includes('PostToolUse workflow-gate hook added'))).toBe(true);
+    expect(logs.every(m => !m.includes('UserPromptSubmit hook added'))).toBe(true);
+    expect(logs.every(m => !m.includes('already installed'))).toBe(true);
+
+    const settings = JSON.parse(await readFile(settingsPath, 'utf8')) as { hooks: Record<string, unknown[]> };
+    expect(settings.hooks['UserPromptSubmit']).toHaveLength(1);
+    expect(settings.hooks['PostToolUse']).toHaveLength(1);
+  });
+
   it('uninstall removes KumiQ hooks and preserves foreign PostToolUse entries', async () => {
     const settingsPath = join(root, '.claude', 'settings.json');
     await mkdir(join(root, '.claude'), { recursive: true });

@@ -82,7 +82,7 @@ function workflowGateCommand(): string {
 
 function isManagedHookCommand(command: string | undefined, agent: 'claude' | 'codex'): boolean {
   if (!command) return false;
-  return command.includes('@kumiq-app/hooks@') ||
+  return (command.includes('@kumiq-app/hooks@') && !command.includes('workflow-gate')) ||
     (command.includes('node ') && command.includes('dist/cli.js') && command.includes(`run --agent ${agent}`));
 }
 
@@ -142,7 +142,8 @@ export async function installClaude(root: string, log: Logger): Promise<void> {
       ...settings,
       hooks: { ...existing, UserPromptSubmit: updatedPrompt, PostToolUse: updatedGate },
     }, null, 2) + '\n');
-    log('Claude Code: hooks added to .claude/settings.json');
+    if (!promptAlready) log('Claude Code: UserPromptSubmit hook added to .claude/settings.json');
+    if (!gateAlready) log('Claude Code: PostToolUse workflow-gate hook added to .claude/settings.json');
   }
   await installClaudeMcp(root, log);
 }
