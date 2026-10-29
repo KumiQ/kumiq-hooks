@@ -33,15 +33,12 @@ The setup is idempotent - running it again on an already-configured repo prints 
 | Agent | Mechanism | Trigger |
 |---|---|---|
 | Claude Code | `UserPromptSubmit` hook in `.claude/settings.json` + MCP server in `.claude/mcp.json` | Before every prompt |
-| Claude Code | `PostToolUse` hook in `.claude/settings.json` (workflow-gate) | After each KumiQ MCP tool call |
 | Codex | `UserPromptSubmit` hook in `.codex/hooks.json` | Before each prompt |
 | GitHub Copilot | Block appended to `.github/copilot-instructions.md` | Every chat request |
 
 For Claude Code, the install also writes `.claude/mcp.json` with the KumiQ MCP server so the `get_standards` tool is available without any manual configuration.
 
-The `UserPromptSubmit` hook infers KumiQ task types from the prompt text and injects an instruction to call `get_standards` with those types before starting work.
-
-The `PostToolUse` workflow-gate hook fires after `get_standards`, `list_workflow_skills`, and `get_workflow_skill` calls. It injects stage-transition guidance into Claude's context and hard-blocks at specification, planning, and review gates to enforce the correct workflow order before implementation or a PR.
+Each hook infers KumiQ task types from the prompt text and injects an instruction to call `get_standards` with those types before starting work.
 
 ## Task type inference
 
