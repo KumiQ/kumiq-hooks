@@ -7,15 +7,15 @@ KumiQ reminder hooks encourage Claude Code, Codex, and GitHub Copilot to call Ku
 Run once from the root of any repository:
 
 ```bash
-npx --yes --package=@kumiq-app/hooks@0.2.0 -- kumiq install
+npx --yes --package=@kumiq-app/hooks@0.2.1 -- kumiq install
 ```
 
 This installs hooks for all three agents. To target a specific one:
 
 ```bash
-npx --yes --package=@kumiq-app/hooks@0.2.0 -- kumiq install --agent claude
-npx --yes --package=@kumiq-app/hooks@0.2.0 -- kumiq install --agent codex
-npx --yes --package=@kumiq-app/hooks@0.2.0 -- kumiq install --agent copilot
+npx --yes --package=@kumiq-app/hooks@0.2.1 -- kumiq install --agent claude
+npx --yes --package=@kumiq-app/hooks@0.2.1 -- kumiq install --agent codex
+npx --yes --package=@kumiq-app/hooks@0.2.1 -- kumiq install --agent copilot
 ```
 
 Generated hook commands use the pinned package version, so they do not refer to the installing developer's npm cache or checkout. Commit generated config and `.kumiq-hooks-state.json` together when that state file exists; it records MCP entries created by the installer so uninstall preserves pre-existing entries. A teammate needs Node.js and network access the first time the hook runs.
@@ -23,7 +23,7 @@ Generated hook commands use the pinned package version, so they do not refer to 
 To remove:
 
 ```bash
-npx --yes --package=@kumiq-app/hooks@0.2.0 -- kumiq uninstall
+npx --yes --package=@kumiq-app/hooks@0.2.1 -- kumiq uninstall
 ```
 
 The setup is idempotent - running it again on an already-configured repo prints "already installed" and exits cleanly.

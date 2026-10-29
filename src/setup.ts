@@ -8,7 +8,7 @@ type Logger = (msg: string) => void;
 type AgentTarget = 'claude' | 'codex' | 'copilot' | 'all';
 
 const COPILOT_MARKER = '<!-- kumiq-instructions -->';
-const PACKAGE_VERSION = '0.1.3';
+const PACKAGE_VERSION = '0.2.1';
 const STATE_FILE = '.kumiq-hooks-state.json';
 
 const COPILOT_BLOCK = `${COPILOT_MARKER}
